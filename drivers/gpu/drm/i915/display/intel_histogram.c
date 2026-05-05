@@ -8,6 +8,7 @@
 #include <drm/drm_print.h>
 #include <drm/drm_vblank.h>
 
+#include "intel_color_regs.h"
 #include "intel_de.h"
 #include "intel_display.h"
 #include "intel_display_regs.h"
@@ -15,6 +16,7 @@
 #include "intel_display_utils.h"
 #include "intel_histogram.h"
 #include "intel_histogram_regs.h"
+#include "intel_psr.h"
 
 /* 3.0% of the pipe's current pixel count, hw does x4 */
 #define HISTOGRAM_GUARDBAND_THRESHOLD_DEFAULT 300
@@ -99,7 +101,10 @@ static void intel_histogram_handle_int_work(struct work_struct *work)
 		struct intel_histogram, work.work);
 	struct intel_crtc *intel_crtc = histogram->crtc;
 	struct intel_display *display = to_intel_display(intel_crtc);
+	struct intel_encoder *encoder = NULL;
+	struct intel_dp *intel_dp = NULL;
 	char *event[3] = {NULL, NULL, NULL};
+	enum pipe pipe=intel_crtc->pipe;
 	int retry;
 
 	event[0] = "HISTOGRAM=1";
@@ -111,8 +116,17 @@ static void intel_histogram_handle_int_work(struct work_struct *work)
 		intel_de_rmw(display, DPST_CTL(intel_crtc->pipe),
 			     DPST_CTL_RESTORE, 0);
 
+	for_each_intel_encoder_mask_with_psr(display->drm, encoder,
+					     intel_crtc->config->uapi.encoder_mask)
+		intel_dp = enc_to_intel_dp(encoder);
+
+	/* If PSR is active, read-write the Palette LUT so as to trigger a PSR exit */
+	if (intel_dp->psr.active) {
+		u32 val = intel_de_read_fw(display, LGC_PALETTE(pipe, 0));
+		intel_de_write_fw(display, LGC_PALETTE(pipe, 0), val);
+	}
+
 	/*
-	 * TODO: PSR to be exited while reading the Histogram data
 	 * Set DPST_CTL Bin Reg function select to TC
 	 * Set DPST_CTL Bin Register Index to 0
 	 */
@@ -303,6 +317,8 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 {
 	struct intel_histogram *histogram = intel_crtc->histogram;
 	struct intel_display *display = to_intel_display(intel_crtc);
+	struct intel_encoder *encoder = NULL;
+	struct intel_dp *intel_dp = NULL;
 	int pipe = intel_crtc->pipe;
 	struct drm_iet_1dlut_sample *iet;
 	u32 *data;
@@ -339,6 +355,16 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 			     sizeof(uint32_t) * iet->nr_elements);
 	if (ret)
 		return ret;
+
+	for_each_intel_encoder_mask_with_psr(display->drm, encoder,
+					     intel_crtc->config->uapi.encoder_mask)
+		intel_dp = enc_to_intel_dp(encoder);
+
+	/* If PSR is active, read-write the Palette LUT so as to trigger a PSR exit */
+	if (intel_dp->psr.active) {
+		u32 val = intel_de_read_fw(display, LGC_PALETTE(pipe, 0));
+		intel_de_write_fw(display, LGC_PALETTE(pipe, 0), val);
+	}
 
 	write_iet(display, pipe, data);
 
