@@ -14,6 +14,7 @@
 #include "intel_display_regs.h"
 #include "intel_display_types.h"
 #include "intel_display_utils.h"
+#include "intel_dp.h"
 #include "intel_histogram.h"
 #include "intel_histogram_regs.h"
 #include "intel_psr.h"
@@ -318,6 +319,7 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	struct intel_histogram *histogram = intel_crtc->histogram;
 	struct intel_display *display = to_intel_display(intel_crtc);
 	struct intel_encoder *encoder = NULL;
+	struct intel_connector *connector = NULL;
 	struct intel_dp *intel_dp = NULL;
 	int pipe = intel_crtc->pipe;
 	struct drm_iet_1dlut_sample *iet;
@@ -367,6 +369,12 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	}
 
 	write_iet(display, pipe, data);
+
+	if (intel_dp && intel_dp_is_edp(intel_dp) &&
+	    iet->nr_elements == (HISTOGRAM_IET_LENGTH + 1)) {
+		connector = intel_dp->attached_connector;
+		connector->panel.backlight.funcs->set(connector->base.state, data[iet->nr_elements]);
+	}
 
 	kfree(data);
 	drm_property_blob_put(intel_crtc->base.state->iet_lut);
