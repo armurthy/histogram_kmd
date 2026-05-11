@@ -196,10 +196,28 @@ void intel_histogram_irq_handler(struct intel_display *display, enum pipe pipe)
 
 int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
 {
+	struct intel_display *display = to_intel_display(intel_crtc);
 	struct intel_histogram *histogram = intel_crtc->histogram;
+	struct drm_connector_list_iter conn_iter;
+	struct drm_connector *connector;
+	struct drm_connector_state *conn_state = NULL;
 
 	/* TODO: Restrictions for enabling histogram */
 	histogram->can_enable = true;
+
+	drm_connector_list_iter_begin(intel_crtc->base.dev, &conn_iter);
+	drm_for_each_connector_iter(connector, &conn_iter) {
+		if (intel_crtc->config->uapi.connector_mask & drm_connector_mask(connector))
+			break;
+	}
+	drm_connector_list_iter_end(&conn_iter);
+	conn_state = connector->state;
+
+	/* Only supported on SDR */
+	if (intel_dp_in_hdr_mode(conn_state) && DISPLAY_VER(display) <= 35) {
+		histogram->can_enable = false;
+		drm_err(display->drm, "Histogram generation on HDR is not supported\n");
+	}
 
 	return 0;
 }
