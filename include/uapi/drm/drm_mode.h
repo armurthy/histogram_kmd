@@ -1612,6 +1612,74 @@ struct drm_mode_closefb {
 #define DRM_ARGB64_GETG_BPCS(c, bpc)	__DRM_ARGB64_GET_BPCS(c, 16, bpc)
 #define DRM_ARGB64_GETB_BPCS(c, bpc)	__DRM_ARGB64_GET_BPCS(c, 0, bpc)
 
+/**
+ * enum drm_mode_histogram
+ *
+ * @DRM_MODE_HISTOGRAM_HSV_MAX_RGB:
+ * Maximum resolution at present 10k, 10240x4320 = 44236800
+ * can be denoted in 25bits. With an additional 7 bits in buffer each bin
+ * can be a u32 value.
+ * For SDL, Maximum value of max(RGB) is 255, so max 255 bins.
+ * If the most significant 5 bits are considered, then bins = 2^5
+ * will be 32 bins.
+ * For HDR, maximum value of max(RGB) is 65535, so max 65535 bins.
+ * For illustration consider a full RED image of 10k resolution considering all
+ * 8 bits histogram would look like hist[255] = {0,0,....44236800} with SDR
+ * plane similarly with HDR the same would look like hist[65535] =
+ * {0,0,0,....44236800}
+ */
+enum drm_mode_histogram {
+	DRM_MODE_HISTOGRAM_HSV_MAX_RGB = 0x01,
+};
+
+/**
+ * struct drm_histogram_caps
+ *
+ * @histogram_mode: histogram generation modes, defined in the
+ *		    enum drm_mode_histogram
+ * @bins_count: number of bins for a chosen histogram mode. For illustration
+ *		refer the above defined histogram mode.
+ */
+struct drm_histogram_caps {
+	__u32 histogram_mode;
+	__u32 bins_count;
+};
+
+/**
+ * struct drm_histogram_config
+ *
+ * @hist_mode_data: address to the histogram mode specific data if any
+ * @nr_hist_mode_data: number of elements pointed by the address in
+ *		       hist_mode_data
+ * @hist_mode: histogram mode(HSV max(RGB), RGB, LUMA etc)
+ * @enable: flag to enable/disable histogram
+ */
+struct drm_histogram_config {
+	__u64 hist_mode_data;
+	__u32 nr_hist_mode_data;
+	enum drm_mode_histogram hist_mode;
+	bool enable;
+};
+
+/**
+ * struct drm_histogram
+ *
+ * @config: histogram configuration data pointed by struct drm_histogram_config
+ * @nr_elements: number of bins in the histogram.
+ * @max_rgb: array of max(RGB) data that consists of histogram data.
+ *	      Histogram is an array of bins. Data format for each bin depends
+ *	      on the histogram mode. Refer to the above histogram modes for
+ *	      more information.
+ */
+struct drm_histogram {
+	struct drm_histogram_config config;
+	__u32 nr_elements;
+	union {
+		/* Case: max(RGB) */
+		__u32 max_rgb[255];
+	};
+};
+
 #if defined(__cplusplus)
 }
 #endif
