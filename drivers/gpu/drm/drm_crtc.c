@@ -991,3 +991,76 @@ bool drm_crtc_in_clone_mode(struct drm_crtc_state *crtc_state)
 	return hweight32(crtc_state->encoder_mask) > 1;
 }
 EXPORT_SYMBOL(drm_crtc_in_clone_mode);
+
+/**
+ * drm_crtc_create_histogram_property: create histogram properties
+ *
+ * @crtc: pointer to the struct drm_crtc.
+ * @caps: pointer to the struct drm_histogram_caps, holds the
+ *	  histogram hardware capabilities.
+ *
+ * The property HISTOGRAM_CAPS exposes the hardware capability for
+ * histogram which includes the histogram mode, number of bins etc
+ * The property HISTOGRAM_ENABLE allows user to enable/disable the
+ * histogram feature and also configure the hardware.
+ * Upon KMD enabling by writing to the hardware registers, histogram
+ * is generated. Histogram is composed of 'n' bins with each bin
+ * being an integer(pixel count).
+ * An event HISTOGRAM will be sent to the user. User upon receiving this
+ * event can read the hardware generated histogram using crtc property
+ * HISTOGRAM_DATA.
+ * User can use this histogram data to enhance the image or in shaders.
+ *
+ * Property HISTOGRAM_CAPS is a blob pointing to the struct drm_histogram_caps
+ * Description of the structure is in include/uapi/drm/drm_mode.h
+ * Property HISTOGRAM_ENABLE is a blob pointing to the struct
+ * drm_histogram_config
+ * Description of the structure is in include/uapi/drm/drm_mode.h
+ * Property HISTOGRAM_DATA is a blob pointing to the struct drm_histogram
+ * Description of the structure is in include/uapi/drm/drm_mode.h
+ *
+ * RETURNS:
+ * Zero for success or -errno
+ */
+int drm_crtc_create_histogram_property(struct drm_crtc *crtc,
+				       struct drm_histogram_caps *caps)
+{
+	struct drm_property *prop;
+	struct drm_property_blob *blob;
+	struct drm_histogram_caps *blob_data;
+
+	blob = drm_property_create_blob(crtc->dev,
+					sizeof(struct drm_histogram_caps),
+				NULL);
+	if (IS_ERR(blob))
+		return -1;
+	blob_data = blob->data;
+	blob_data->histogram_mode = caps->histogram_mode;
+	blob_data->bins_count = caps->bins_count;
+
+	prop = drm_property_create(crtc->dev, DRM_MODE_PROP_ATOMIC |
+				   DRM_MODE_PROP_IMMUTABLE | DRM_MODE_PROP_BLOB,
+				   "HISTOGRAM_CAPS", blob->base.id);
+	if (!prop)
+		return -ENOMEM;
+	drm_object_attach_property(&crtc->base, prop, blob->base.id);
+	crtc->histogram_caps_property = prop;
+
+	prop = drm_property_create(crtc->dev, DRM_MODE_PROP_ATOMIC |
+				   DRM_MODE_PROP_BLOB, "HISTOGRAM_ENABLE", 0);
+	if (!prop)
+		return -ENOMEM;
+	drm_object_attach_property(&crtc->base, prop, 0);
+	crtc->histogram_enable_property = prop;
+
+	prop = drm_property_create(crtc->dev, DRM_MODE_PROP_ATOMIC |
+				   DRM_MODE_PROP_IMMUTABLE | DRM_MODE_PROP_BLOB,
+				   "HISTOGRAM_DATA", 0);
+	if (!prop)
+		return -ENOMEM;
+	drm_object_attach_property(&crtc->base, prop, 0);
+	crtc->histogram_data_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_crtc_create_histogram_property);
