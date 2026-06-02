@@ -1680,6 +1680,74 @@ struct drm_histogram {
 	};
 };
 
+/**
+ * enum drm_iet_mode
+ * @DRM_MODE_IET_LOOKUP_LUT:
+ * LUT values are points on exponential graph with x axis and y-axis y=f(x)
+ * This f(x) can be the algorithm, defined by the user space algorithm.
+ * When this LUT table is passed to the hardware it signifies how the hardware
+ * should use this table to get the LUT values. In this mode its direct lookup
+ * table. x-axis corresponds to input pixel value and y-axis corresponds to
+ * the output pixel value.
+ *
+ * @DRM_MODE_IET_MULTIPLICATIVE:
+ * LUT values, x and y are points on negative exponential graph with
+ * x-axis and y-axis (y = y/x). The value passed by the user will be
+ * in y/x i.e OutPixel/InPixel. X co-ordinate proportional to pixel value
+ * and Y-cordinate is the multiplier factor, i.e x-axis in pixels and
+ * y-axis is OutPixel/InPixel. so upon multiplying x, y is obtained,
+ * hence multiplicative.
+ * The format of LUT can at max be 8.24(8integer 24 fractional)
+ * represented by u32. 32bit is the container and if 16.16 is chosen
+ * then it doesn't make sense to boost the pixel by 2^16. Hence set aside
+ * 8bit for integer 2^8 thereby boosting the pixel by a value 255 which
+ * itself is a huge boost factor. Remaining 24bits out of the 32bit
+ * container is fractional part. This is also optimal for implementing
+ * in the hardware.
+ * Depending on the hardware capability and exponent mantissa can be
+ * chosen within this limits.
+ */
+enum drm_iet_mode {
+	DRM_MODE_IET_LOOKUP_LUT = 0x01,
+	DRM_MODE_IET_MULTIPLICATIVE = 0x02,
+};
+
+/**
+ * struct drm_iet_caps
+ *
+ * @iet_mode: pixel factor enhancement modes defined in enum drm_iet_mode.
+ *	      Multiple modes can be supported by hardware, the value can be
+ *	      ORed.
+ * @iet_sample_format: holds the address of an array of u32 LUT sample formats
+ *		       depending on the hardware capability. Max being 8.24
+ *		       Doing a bitwise AND will get the present sample.
+ *		       Ex: for 1 integer 9 fraction AND with 0x10001FF
+ * @nr_iet_sample_formats: number of iet_sample_formsts supported by the
+ *			   hardware
+ * @nr_iet_lut_entries: number of LUT entries
+ */
+struct drm_iet_caps {
+	__u32 iet_mode;
+	__u64 iet_sample_format;
+	__u32 nr_iet_sample_formats;
+	__u32 nr_iet_lut_entries;
+};
+
+/**
+ * struct drm_iet_1dlut_sample
+ * @iet_lut: the address in the field describes the format of the data
+ *		corresponding to the @iet_mode
+ *		In case of direct lookup this is NULL, in case of
+ *		multiplicative mode LUT exponent and mantissa format.
+ * @nr_elements: number of entries pointed by the data @iet_lut
+ * @iet_mode: image enhancement mode, this will also convey the channel.
+ */
+struct drm_iet_1dlut_sample {
+	__u64 iet_lut;
+	__u32 nr_elements;
+	enum drm_iet_mode iet_mode;
+};
+
 #if defined(__cplusplus)
 }
 #endif
