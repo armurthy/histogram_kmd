@@ -476,6 +476,16 @@ static int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 							&replaced);
 		state->histogram_updated |= replaced;
 		return ret;
+	} else if (property == crtc->iet_lut_property) {
+		ret = drm_property_replace_blob_from_id(dev,
+							&state->iet_lut,
+							val,
+							-1,
+							sizeof(struct drm_iet_1dlut_sample),
+							-1,
+							&replaced);
+		state->iet_lut_updated |= replaced;
+		return ret;
 	} else if (property == crtc->scaling_filter_property) {
 		state->scaling_filter = val;
 	} else if (property == crtc->sharpness_strength_property) {
@@ -523,6 +533,10 @@ drm_atomic_crtc_get_property(struct drm_crtc *crtc,
 		*val = (state->histogram_enable) ? state->histogram_enable->base.id : 0;
 	else if (property == crtc->histogram_data_property)
 		*val = (state->histogram_data) ? state->histogram_data->base.id : 0;
+	else if (property == crtc->iet_lut_caps_property)
+		*val = (state->iet_lut_caps) ? state->iet_lut_caps->base.id : 0;
+	else if (property == crtc->iet_lut_property)
+		*val = (state->iet_lut) ? state->iet_lut->base.id : 0;
 	else if (property == crtc->scaling_filter_property)
 		*val = state->scaling_filter;
 	else if (property == crtc->sharpness_strength_property)

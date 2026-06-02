@@ -301,6 +301,29 @@ struct drm_crtc_state {
 	bool histogram_updated;
 
 	/**
+	 * @iet_lut_caps:
+	 *
+	 * The blob points to the structure drm_iet_lut_caps.
+	 * For more info on the elements of the struct drm_iet_lut_caps
+	 * see include/uapi/drm/drm_mode.h
+	 */
+	struct drm_property_blob *iet_lut_caps;
+	/**
+	 * @iet_lut:
+	 *
+	 * The blob points to the struct drm_lut_sample
+	 * For more information on the elements of struct drm_lut_sample
+	 * see include/uapi/drm/drm_mode.h
+	 */
+	struct drm_property_blob *iet_lut;
+	/**
+	 * @iet_lut_updates:
+	 *
+	 * Convey that the image enhanced data has been updated by the user
+	 */
+	bool iet_lut_updated;
+
+	/**
 	 * @background_color:
 	 *
 	 * RGB value representing the CRTC's background color.  The background
@@ -1164,6 +1187,17 @@ struct drm_crtc {
 	struct drm_property *histogram_data_property;
 
 	/**
+	 * @iet_lut_caps_property: Optional CRTC property for getting the
+	 * iet LUT hardware capability.
+	 */
+	struct drm_property *iet_lut_caps_property;
+	/**
+	 * @iet_lut_proeprty: Optional CRTC property for writing the
+	 * image enhanced LUT
+	 */
+	struct drm_property *iet_lut_property;
+
+	/**
 	 * @scaling_filter_property: property to apply a particular filter while
 	 * scaling.
 	 */
@@ -1414,4 +1448,6 @@ bool drm_crtc_in_clone_mode(struct drm_crtc_state *crtc_state);
 int drm_crtc_create_sharpness_strength_property(struct drm_crtc *crtc);
 int drm_crtc_create_histogram_property(struct drm_crtc *crtc,
 				       struct drm_histogram_caps *caps);
+int drm_crtc_create_iet_lut_property(struct drm_crtc *crtc,
+				     struct drm_iet_caps *caps);
 #endif /* __DRM_CRTC_H__ */
