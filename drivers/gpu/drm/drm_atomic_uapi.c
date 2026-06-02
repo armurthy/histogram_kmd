@@ -466,6 +466,16 @@ static int drm_atomic_crtc_set_property(struct drm_crtc *crtc,
 			return -EFAULT;
 
 		set_out_fence_for_crtc(state->state, crtc, fence_ptr);
+	} else if (property == crtc->histogram_enable_property) {
+		ret = drm_property_replace_blob_from_id(dev,
+							&state->histogram_enable,
+							val,
+							-1,
+							sizeof(struct drm_histogram_config),
+							-1,
+							&replaced);
+		state->histogram_updated |= replaced;
+		return ret;
 	} else if (property == crtc->scaling_filter_property) {
 		state->scaling_filter = val;
 	} else if (property == crtc->sharpness_strength_property) {
@@ -507,6 +517,12 @@ drm_atomic_crtc_get_property(struct drm_crtc *crtc,
 		*val = state->background_color;
 	else if (property == config->prop_out_fence_ptr)
 		*val = 0;
+	else if (property == crtc->histogram_caps_property)
+		*val = (state->histogram_caps) ? state->histogram_caps->base.id : 0;
+	else if (property == crtc->histogram_enable_property)
+		*val = (state->histogram_enable) ? state->histogram_enable->base.id : 0;
+	else if (property == crtc->histogram_data_property)
+		*val = (state->histogram_data) ? state->histogram_data->base.id : 0;
 	else if (property == crtc->scaling_filter_property)
 		*val = state->scaling_filter;
 	else if (property == crtc->sharpness_strength_property)

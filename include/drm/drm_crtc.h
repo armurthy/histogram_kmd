@@ -275,6 +275,32 @@ struct drm_crtc_state {
 	struct drm_property_blob *gamma_lut;
 
 	/**
+	 * @histogram_caps:
+	 *
+	 * The blob points to the structure drm_histogram_caps.
+	 * For more info on the elements of the struct drm_histogram_caps
+	 * see include/uapi/drm/drm_mode.h
+	 */
+	struct drm_property_blob *histogram_caps;
+	/**
+	 * @histogram_enable:
+	 *
+	 * The blob points to the structure drm_histogram_config.
+	 * For more information on the elements of struct drm_histogram_config
+	 * see include/uapi/drm/drm_mode.h
+	 */
+	struct drm_property_blob *histogram_enable;
+	/**
+	 * @histogram_data:
+	 *
+	 * The blob points to the structure drm_histogram.
+	 * For more information on the elements of struct drm_histogram
+	 * see include/uapi/drm/drm_mode.h
+	 */
+	struct drm_property_blob *histogram_data;
+	bool histogram_updated;
+
+	/**
 	 * @background_color:
 	 *
 	 * RGB value representing the CRTC's background color.  The background
@@ -1122,6 +1148,22 @@ struct drm_crtc {
 	struct drm_object_properties properties;
 
 	/**
+	 * @histogram_caps_property: Optional CRTC property for getting the
+	 * histogram hardware capability.
+	 */
+	struct drm_property *histogram_caps_property;
+	/**
+	 * @histogram_enable_property: Optional CRTC property for enabling or
+	 * disabling global histogram.
+	 */
+	struct drm_property *histogram_enable_property;
+	/**
+	 * @histogram_data_proeprty: Optional CRTC property for getting the
+	 * histogram blob data.
+	 */
+	struct drm_property *histogram_data_property;
+
+	/**
 	 * @scaling_filter_property: property to apply a particular filter while
 	 * scaling.
 	 */
@@ -1370,4 +1412,6 @@ int drm_crtc_create_scaling_filter_property(struct drm_crtc *crtc,
 					    unsigned int supported_filters);
 bool drm_crtc_in_clone_mode(struct drm_crtc_state *crtc_state);
 int drm_crtc_create_sharpness_strength_property(struct drm_crtc *crtc);
+int drm_crtc_create_histogram_property(struct drm_crtc *crtc,
+				       struct drm_histogram_caps *caps);
 #endif /* __DRM_CRTC_H__ */
