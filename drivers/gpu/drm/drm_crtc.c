@@ -1064,3 +1064,57 @@ int drm_crtc_create_histogram_property(struct drm_crtc *crtc,
 	return 0;
 }
 EXPORT_SYMBOL(drm_crtc_create_histogram_property);
+
+/**
+ * drm_crtc_create_iet_lut_property
+ *
+ * @crtc: pointer to the struct drm_crtc.
+ * @caps: pointer to the struct drm_iet_caps, holds the
+ *	  image enhancement LUT hardware capabilities.
+ *
+ * This 1DLUT is used by the hardware to enahance the image. Hardware
+ * interpolates this LUT value to generate the enhanced output image.
+ *
+ * The blob property IET_LUT_CAPS points to the struct drm_iet_lut_caps
+ * The blob property IET_LUT points to the struct drm_iet_1dlut_sample
+ * Description of the structure is in include/uapi/drm/drm_mode.h
+ *
+ * RETURNS:
+ * Zero for success or -errno
+ */
+int drm_crtc_create_iet_lut_property(struct drm_crtc *crtc,
+				     struct drm_iet_caps *caps)
+{
+	struct drm_property *prop;
+	struct drm_iet_caps *blob_data;
+	struct drm_property_blob *blob;
+
+	blob = drm_property_create_blob(crtc->dev,
+					sizeof(struct drm_iet_caps),
+					NULL);
+	if (IS_ERR(blob))
+		return -1;
+	blob_data = blob->data;
+	blob_data->iet_mode = caps->iet_mode;
+	blob_data->nr_iet_sample_formats = caps->nr_iet_sample_formats;
+	blob_data->nr_iet_lut_entries = caps->nr_iet_lut_entries;
+	blob_data->iet_sample_format = caps->iet_sample_format;
+
+	prop = drm_property_create(crtc->dev, DRM_MODE_PROP_ATOMIC |
+				   DRM_MODE_PROP_IMMUTABLE | DRM_MODE_PROP_BLOB,
+				   "IET_LUT_CAPS", blob->base.id);
+	if (!prop)
+		return -ENOMEM;
+	drm_object_attach_property(&crtc->base, prop, blob->base.id);
+	crtc->iet_lut_caps_property = prop;
+
+	prop = drm_property_create(crtc->dev, DRM_MODE_PROP_ATOMIC |
+				   DRM_MODE_PROP_BLOB, "IET_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+	drm_object_attach_property(&crtc->base, prop, 0);
+	crtc->iet_lut_property = prop;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_crtc_create_iet_lut_property);

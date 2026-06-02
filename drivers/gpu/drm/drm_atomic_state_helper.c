@@ -176,6 +176,10 @@ void __drm_atomic_helper_crtc_duplicate_state(struct drm_crtc *crtc,
 		drm_property_blob_get(state->histogram_enable);
 	if (state->histogram_data)
 		drm_property_blob_get(state->histogram_data);
+	if (state->iet_lut_caps)
+		drm_property_blob_get(state->iet_lut_caps);
+	if (state->iet_lut)
+		drm_property_blob_get(state->iet_lut);
 	state->mode_changed = false;
 	state->active_changed = false;
 	state->planes_changed = false;
@@ -191,6 +195,7 @@ void __drm_atomic_helper_crtc_duplicate_state(struct drm_crtc *crtc,
 	state->self_refresh_active = false;
 
 	state->histogram_updated = false;
+	state->iet_lut_updated = false;
 }
 EXPORT_SYMBOL(__drm_atomic_helper_crtc_duplicate_state);
 
