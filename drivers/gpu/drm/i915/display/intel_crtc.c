@@ -27,6 +27,7 @@
 #include "intel_drrs.h"
 #include "intel_dsi.h"
 #include "intel_fifo_underrun.h"
+#include "intel_histogram.h"
 #include "intel_parent.h"
 #include "intel_pipe_crc.h"
 #include "intel_plane.h"
@@ -218,6 +219,7 @@ static struct intel_crtc *intel_crtc_alloc(void)
 static void intel_crtc_free(struct intel_crtc *crtc)
 {
 	intel_crtc_destroy_state(&crtc->base, crtc->base.state);
+	intel_histogram_finish(crtc);
 	kfree(crtc);
 }
 
@@ -408,6 +410,11 @@ static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 
 	if (DISPLAY_VER(display) >= 9)
 		drm_crtc_attach_background_color_property(&crtc->base);
+
+	intel_histogram_init(crtc);
+	if (drm_crtc_create_histogram_property(&crtc->base,
+					       crtc->histogram->caps))
+		drm_err(display->drm, "Failed to initialize histogram properties\n");
 
 	intel_color_crtc_init(crtc);
 	intel_drrs_crtc_init(crtc);
