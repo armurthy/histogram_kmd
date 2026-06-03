@@ -14,6 +14,8 @@ struct drm_property_blob;
 struct drm_histogram_config;
 struct drm_histogram_caps;
 struct intel_crtc;
+struct intel_display;
+enum pipe;
 
 #define HISTOGRAM_BIN_COUNT                    32
 
@@ -39,6 +41,7 @@ enum intel_global_hist_lut {
 	INTEL_HISTOGRAM_PIXEL_FACTOR,
 };
 
+void intel_histogram_irq_handler(struct intel_display *display, enum pipe pipe);
 int intel_histogram_atomic_check(struct intel_crtc *intel_crtc);
 int intel_histogram_update(struct intel_crtc *intel_crtc,
 			   struct drm_histogram_config *config);
