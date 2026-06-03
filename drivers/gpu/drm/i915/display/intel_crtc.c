@@ -415,6 +415,9 @@ static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 	if (drm_crtc_create_histogram_property(&crtc->base,
 					       crtc->histogram->caps))
 		drm_err(display->drm, "Failed to initialize histogram properties\n");
+	if (drm_crtc_create_iet_lut_property(&crtc->base,
+					     crtc->histogram->iet_caps))
+		drm_err(display->drm, "Failed to initialize histogram properties\n");
 
 	intel_color_crtc_init(crtc);
 	intel_drrs_crtc_init(crtc);
