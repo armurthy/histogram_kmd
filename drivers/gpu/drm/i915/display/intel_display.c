@@ -4390,6 +4390,13 @@ static int intel_crtc_atomic_check(struct intel_atomic_state *state,
 			return ret;
 	}
 
+	if (crtc_state->uapi.iet_lut_updated && crtc_state->uapi.iet_lut) {
+		ret = intel_histogram_capture_iet_lut(crtc,
+						      crtc_state->uapi.iet_lut);
+		if (ret)
+			return ret;
+	}
+
 	return 0;
 }
 

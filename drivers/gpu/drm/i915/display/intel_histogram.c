@@ -20,6 +20,7 @@
 /* Precision factor for threshold guardband */
 #define HISTOGRAM_GUARDBAND_PRECISION_FACTOR 10000
 #define HISTOGRAM_BIN_READ_RETRY_COUNT 5
+#define IET_SAMPLE_FORMAT_1_INT_9_FRACT 0x1000009
 
 static bool intel_histogram_get_data(struct intel_crtc *intel_crtc)
 {
@@ -110,6 +111,51 @@ void intel_histogram_irq_handler(struct intel_display *display, enum pipe pipe)
 
 	queue_delayed_work(display->wq.unordered,
 			   &histogram->work, 0);
+}
+
+/*
+ * Capture the userspace IET LUT into a kernel buffer while we are still in
+ * the ioctl caller's context.
+ */
+int intel_histogram_capture_iet_lut(struct intel_crtc *intel_crtc,
+				    struct drm_property_blob *blob)
+{
+	struct intel_display *display = to_intel_display(intel_crtc);
+	struct intel_histogram *histogram = intel_crtc->histogram;
+	struct drm_iet_1dlut_sample *iet;
+	u32 *data;
+	u32 nr;
+
+	if (!histogram || !blob || !blob->data)
+		return -EINVAL;
+
+	if (blob->length < sizeof(*iet))
+		return -EINVAL;
+
+	iet = (struct drm_iet_1dlut_sample *)blob->data;
+	nr = iet->nr_elements;
+
+	if (nr == 0 || nr > HISTOGRAM_IET_LENGTH + 1)
+		return -EINVAL;
+
+	data = kcalloc(nr, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	if (copy_from_user(data, u64_to_user_ptr(iet->iet_lut),
+			   sizeof(*data) * nr)) {
+		drm_err(display->drm,
+			"IET LUT copy_from_user failed (nr=%u, uptr=0x%llx)\n",
+			nr, iet->iet_lut);
+		kfree(data);
+		return -EFAULT;
+	}
+
+	kfree(histogram->iet_lut_data);
+	histogram->iet_lut_data = data;
+	histogram->nr_iet_lut = nr;
+
+	return 0;
 }
 
 int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
@@ -217,11 +263,61 @@ int intel_histogram_update(struct intel_crtc *intel_crtc,
 	return 0;
 }
 
+int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
+				struct drm_property_blob *blob)
+{
+	struct intel_histogram *histogram = intel_crtc->histogram;
+	struct intel_display *display = to_intel_display(intel_crtc);
+	int pipe = intel_crtc->pipe;
+	int i = 0;
+	u32 *data;
+
+	if (!histogram)
+		return -EINVAL;
+
+	if (!histogram->enable) {
+		drm_err(display->drm, "histogram not enabled");
+		return -EINVAL;
+	}
+
+	/* LUT was captured from userspace in atomic_check (user context). */
+	data = histogram->iet_lut_data;
+	if (!data) {
+		drm_err(display->drm,
+			"IET LUT not captured (data=%p)\n", data);
+		return -EINVAL;
+	}
+
+	/* Set DPST_CTL Bin Reg function select to IE & wait for a vblabk */
+	intel_de_rmw(display, DPST_CTL(pipe),
+		     DPST_CTL_BIN_REG_FUNC_SEL, DPST_CTL_BIN_REG_FUNC_IE);
+
+	drm_crtc_wait_one_vblank(&intel_crtc->base);
+
+	 /* Set DPST_CTL Bin Register Index to 0 */
+	intel_de_rmw(display, DPST_CTL(pipe),
+		     DPST_CTL_BIN_REG_MASK, DPST_CTL_BIN_REG_CLEAR);
+
+	for (i = 0; i < HISTOGRAM_IET_LENGTH; i++) {
+		intel_de_rmw(display, DPST_BIN(pipe),
+			     DPST_BIN_DATA_MASK, data[i]);
+		drm_dbg_atomic(display->drm, "iet_lut[%d]=%x\n", i, data[i]);
+	}
+	kfree(histogram->iet_lut_data);
+	histogram->iet_lut_data = NULL;
+	histogram->nr_iet_lut = 0;
+
+	drm_property_blob_put(intel_crtc->base.state->iet_lut);
+
+	return 0;
+}
+
 void intel_histogram_finish(struct intel_crtc *intel_crtc)
 {
 	struct intel_histogram *histogram = intel_crtc->histogram;
 
 	cancel_delayed_work_sync(&histogram->work);
+	kfree(histogram->iet_lut_data);
 	kfree(histogram);
 }
 
@@ -229,6 +325,8 @@ int intel_histogram_init(struct intel_crtc *crtc)
 {
 	struct intel_histogram *histogram;
 	struct drm_histogram_caps *histogram_caps;
+	struct drm_iet_caps *iet_caps;
+	u32 *iet_format;
 
 	/* Allocate histogram internal struct */
 	histogram = kzalloc(sizeof(*histogram), GFP_KERNEL);
@@ -241,10 +339,23 @@ int intel_histogram_init(struct intel_crtc *crtc)
 	histogram_caps->histogram_mode = DRM_MODE_HISTOGRAM_HSV_MAX_RGB;
 	histogram_caps->bins_count = HISTOGRAM_BIN_COUNT;
 
+	iet_caps = kzalloc(sizeof(*iet_caps), GFP_KERNEL);
+	if (!iet_caps)
+		return -ENOMEM;
+
+	iet_caps->iet_mode = DRM_MODE_IET_MULTIPLICATIVE;
+	iet_caps->nr_iet_sample_formats = 1;
+	iet_caps->nr_iet_lut_entries = HISTOGRAM_IET_LENGTH;
+	iet_format = kzalloc(sizeof(u32)*iet_caps->nr_iet_sample_formats,
+			     GFP_KERNEL);
+	*iet_format = IET_SAMPLE_FORMAT_1_INT_9_FRACT;
+	iet_caps->iet_sample_format = *iet_format;
+
 	crtc->histogram = histogram;
 	histogram->crtc = crtc;
 	histogram->can_enable = false;
 	histogram->caps = histogram_caps;
+	histogram->iet_caps = iet_caps;
 
 	INIT_DEFERRABLE_WORK(&histogram->work,
 			     intel_histogram_handle_int_work);
