@@ -25,6 +25,60 @@
 #define HISTOGRAM_GUARDBAND_PRECISION_FACTOR 10000
 #define HISTOGRAM_BIN_READ_RETRY_COUNT 5
 #define IET_SAMPLE_FORMAT_1_INT_9_FRACT 0x1000009
+#define MIN_SEGMENTS 32
+#define MAX_SEGMENTS 128
+
+static int intel_histogram_sf_compute(struct intel_crtc *intel_crtc)
+{
+	struct intel_display *display = to_intel_display(intel_crtc);
+	u32 tmp, source_height;
+	u16 seg_size = MIN_SEGMENTS;
+
+	/* Get the pipe source height from the pipesrc register */
+	tmp = intel_de_read(display, PIPESRC(display, intel_crtc->pipe));
+	source_height = REG_FIELD_GET(PIPESRC_HEIGHT_MASK, tmp) + 1;
+
+	while (seg_size <= source_height) {
+		if (source_height % seg_size == 0) {
+			if ((source_height / seg_size) < MAX_SEGMENTS)
+				break;
+			else
+				continue;
+		}
+		seg_size++;
+	}
+
+	return seg_size;
+
+}
+
+int intel_histogram_sf_update_seg(struct intel_crtc *intel_crtc, struct intel_dsb *dsb)
+{
+	struct intel_display *display = to_intel_display(intel_crtc);
+	struct intel_histogram *histogram = intel_crtc->histogram;
+	struct intel_crtc_state *crtc_state = intel_crtc->config;
+	u16 start, end;
+	u32 value;
+
+	if (!histogram->seg_size)
+		return -EINVAL;
+
+	/* Program dpst selective fetch */
+	intel_de_write_dsb(display, dsb, DPST_SF_CTL(intel_crtc->pipe),
+			   DPST_SF_CTL_ENABLE);
+
+	start = (crtc_state->psr2_su_area.y2/histogram->seg_size);
+	end = (crtc_state->psr2_su_area.y1/histogram->seg_size);
+
+	value = DPST_SF_SEG_SIZE(histogram->seg_size) |
+		       DPST_SF_SEG_START(start) |
+		       DPST_SF_SEG_END(end);
+	intel_de_write_dsb(display, dsb, DPST_SF_SEG(intel_crtc->pipe), value);
+
+	/* TODO: Wait for 2 vblanks after enabling SF */
+
+	return 0;
+}
 
 static void intel_histogram_enable_dithering(struct intel_display *display,
 					     enum pipe pipe)
@@ -219,6 +273,8 @@ int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
 		drm_err(display->drm, "Histogram generation on HDR is not supported\n");
 	}
 
+	if (intel_crtc->config->psr2_su_area.y1)
+		histogram->seg_size = intel_histogram_sf_compute(intel_crtc);
 	return 0;
 }
 
@@ -304,6 +360,13 @@ static void intel_histogram_disable(struct intel_crtc *intel_crtc)
 	/* Clear pending interrupts and disable interrupts */
 	intel_de_rmw(display, DPST_GUARD(pipe),
 		     DPST_GUARD_HIST_INT_EN | DPST_GUARD_HIST_EVENT_STATUS, 0);
+
+	/* Disable Selective fetch only if it was actually configured */
+	if (histogram->seg_size) {
+		intel_de_rmw(display, DPST_SF_CTL(pipe),
+			     DPST_SF_CTL_ENABLE, 0);
+		histogram->seg_size = 0;
+	}
 
 	/* disable DPST_CTL Histogram mode */
 	intel_de_rmw(display, DPST_CTL(pipe),

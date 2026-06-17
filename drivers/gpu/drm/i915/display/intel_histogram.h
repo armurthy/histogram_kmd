@@ -15,6 +15,7 @@ struct drm_histogram_config;
 struct drm_histogram_caps;
 struct intel_crtc;
 struct intel_display;
+struct intel_dsb;
 enum pipe;
 
 #define HISTOGRAM_BIN_COUNT                    32
@@ -28,6 +29,7 @@ struct intel_histogram {
 	bool enable;
 	bool can_enable;
 	u32 bin_data[HISTOGRAM_BIN_COUNT];
+	u16 seg_size;
 };
 
 enum intel_global_hist_status {
@@ -51,5 +53,6 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 				struct drm_property_blob *blob);
 int intel_histogram_init(struct intel_crtc *intel_crtc);
 void intel_histogram_finish(struct intel_crtc *intel_crtc);
+int intel_histogram_sf_update_seg(struct intel_crtc *intel_crtc, struct intel_dsb *dsb);
 
 #endif /* __INTEL_HISTOGRAM_H__ */

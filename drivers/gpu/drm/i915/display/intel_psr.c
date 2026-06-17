@@ -50,6 +50,7 @@
 #include "intel_dsb.h"
 #include "intel_frontbuffer.h"
 #include "intel_hdmi.h"
+#include "intel_histogram.h"
 #include "intel_psr.h"
 #include "intel_psr_regs.h"
 #include "intel_quirks.h"
@@ -2688,6 +2689,9 @@ void intel_psr2_program_trans_man_trk_ctl(struct intel_dsb *dsb,
 			return;
 		break;
 	}
+
+	if (crtc->histogram->enable)
+		intel_histogram_sf_update_seg(crtc, dsb);
 
 	intel_de_write_dsb(display, dsb,
 			   PSR2_MAN_TRK_CTL(display, cpu_transcoder),
