@@ -31,7 +31,9 @@ struct intel_histogram {
 	u32 bin_data[HISTOGRAM_BIN_COUNT];
 	u32 *iet_lut_data;
 	u32 nr_iet_lut;
+	u32 gbandthreshold;
 	u16 seg_size;
+	u8 gbanddelay;
 };
 
 enum intel_global_hist_status {
