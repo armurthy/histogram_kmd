@@ -19,8 +19,13 @@
 #include "intel_histogram_regs.h"
 #include "intel_psr.h"
 
-/* 3.0% of the pipe's current pixel count, hw does x4 */
-#define HISTOGRAM_GUARDBAND_THRESHOLD_DEFAULT 300
+/* 12% of the pipe's current pixel count, hw does x4 */
+#define HISTOGRAM_LOW_GUARDBAND_THRESHOLD_DEFAULT 300
+/* 5% of the pipe's current pixel count, hw does x4 */
+#define HISTOGRAM_LOWER_GUARDBAND_THRESHOLD_DEFAULT 125
+/* 1% of the pipe's current pixel count, hw does x4 */
+#define HISTOGRAM_LOWEST_GUARDBAND_THRESHOLD_DEFAULT 25
+#define HISTOGRAM_HIGH_GUARDBAND_THRESHOLD_DEFAULT 1000
 /* Precision factor for threshold guardband */
 #define HISTOGRAM_GUARDBAND_PRECISION_FACTOR 10000
 #define HISTOGRAM_BIN_READ_RETRY_COUNT 5
@@ -148,6 +153,28 @@ static bool intel_histogram_get_data(struct intel_crtc *intel_crtc)
 		}
 	}
 	return true;
+}
+
+static void intel_histogram_program_guardband(struct intel_crtc *intel_crtc,
+					      u32 threshold, u8 delay)
+{
+	struct intel_display *display = to_intel_display(intel_crtc);
+	u64 res = 0;
+	u32 gbandthreshold = 0;
+
+	res = (intel_crtc->config->hw.adjusted_mode.vtotal *
+	       intel_crtc->config->hw.adjusted_mode.htotal);
+
+	gbandthreshold = (res *	threshold) /
+			  HISTOGRAM_GUARDBAND_PRECISION_FACTOR;
+
+	/* Enable histogram interrupt mode */
+	intel_de_rmw(display, DPST_GUARD(intel_crtc->pipe),
+		     DPST_GUARD_THRESHOLD_GB_MASK |
+		     DPST_GUARD_INTERRUPT_DELAY_MASK | DPST_GUARD_HIST_INT_EN,
+		     DPST_GUARD_THRESHOLD_GB(gbandthreshold) |
+		     DPST_GUARD_INTERRUPT_DELAY(delay) |
+		     DPST_GUARD_HIST_INT_EN);
 }
 
 static void intel_histogram_handle_int_work(struct work_struct *work)
@@ -283,8 +310,6 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 	struct intel_display *display = to_intel_display(intel_crtc);
 	struct intel_histogram *histogram = intel_crtc->histogram;
 	int pipe = intel_crtc->pipe;
-	u64 res;
-	u32 gbandthreshold;
 
 	if (!histogram || !histogram->can_enable)
 		return -EINVAL;
@@ -320,20 +345,10 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 	/* Re-Visit: check if wait for one vblank is required */
 	drm_crtc_wait_one_vblank(&intel_crtc->base);
 
-	/* TODO: Program GuardBand Threshold needs to be moved to modeset path */
-	res = (intel_crtc->config->hw.adjusted_mode.vtotal *
-	       intel_crtc->config->hw.adjusted_mode.htotal);
-
-	gbandthreshold = (res *	HISTOGRAM_GUARDBAND_THRESHOLD_DEFAULT) /
-			  HISTOGRAM_GUARDBAND_PRECISION_FACTOR;
-
-	/* Enable histogram interrupt mode */
-	intel_de_rmw(display, DPST_GUARD(pipe),
-		     DPST_GUARD_THRESHOLD_GB_MASK |
-		     DPST_GUARD_INTERRUPT_DELAY_MASK | DPST_GUARD_HIST_INT_EN,
-		     DPST_GUARD_THRESHOLD_GB(gbandthreshold) |
-		     DPST_GUARD_INTERRUPT_DELAY(0x04) |
-		     DPST_GUARD_HIST_INT_EN);
+	/* Program GuardBand Threshold/delay to lowest possible at the time of enabling histogram */
+	intel_histogram_program_guardband(intel_crtc,
+					  HISTOGRAM_LOWEST_GUARDBAND_THRESHOLD_DEFAULT,
+					  0x01);
 
 	/* Clear pending interrupts has to be done on separate write */
 	intel_de_rmw(display, DPST_GUARD(pipe),
