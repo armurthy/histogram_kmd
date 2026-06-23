@@ -159,6 +159,7 @@ static void intel_histogram_program_guardband(struct intel_crtc *intel_crtc,
 					      u32 threshold, u8 delay)
 {
 	struct intel_display *display = to_intel_display(intel_crtc);
+	struct intel_histogram *histogram = intel_crtc->histogram;
 	u64 res = 0;
 	u32 gbandthreshold = 0;
 
@@ -175,6 +176,8 @@ static void intel_histogram_program_guardband(struct intel_crtc *intel_crtc,
 		     DPST_GUARD_THRESHOLD_GB(gbandthreshold) |
 		     DPST_GUARD_INTERRUPT_DELAY(delay) |
 		     DPST_GUARD_HIST_INT_EN);
+	histogram->gbandthreshold = threshold;
+	histogram->gbanddelay = delay;
 }
 
 static void intel_histogram_handle_int_work(struct work_struct *work)
@@ -188,6 +191,8 @@ static void intel_histogram_handle_int_work(struct work_struct *work)
 	char *event[3] = {NULL, NULL, NULL};
 	enum pipe pipe=intel_crtc->pipe;
 	int retry;
+	u32 gbandthreshold = 0;
+	u8 gbanddelay = 0;
 
 	event[0] = "HISTOGRAM=1";
 	event[1] = kasprintf(GFP_KERNEL, "PIPE=%d", intel_crtc->pipe);
@@ -250,9 +255,29 @@ static void intel_histogram_handle_int_work(struct work_struct *work)
 			     DPST_CTL_GUARDBAND_INTERRUPT_DELAY(0x0) |
 			     DPST_CTL_RESTORE);
 
-	/* Enable histogram interrupt */
-	intel_de_rmw(display, DPST_GUARD(intel_crtc->pipe), DPST_GUARD_HIST_INT_EN,
-		     DPST_GUARD_HIST_INT_EN);
+	/* Restore to default guardband threshold/delay */
+	if (intel_dp->psr.active) {
+		gbandthreshold = HISTOGRAM_LOWEST_GUARDBAND_THRESHOLD_DEFAULT;
+		gbanddelay = 0x01;
+	} else if (DISPLAY_VER(display) >= 20) {
+		gbandthreshold = HISTOGRAM_LOWER_GUARDBAND_THRESHOLD_DEFAULT;
+		gbanddelay = 0x04;
+	} else {
+		gbandthreshold = HISTOGRAM_LOW_GUARDBAND_THRESHOLD_DEFAULT;
+		gbanddelay = 0x04;
+	}
+	/*
+	 * guardband threshold/delay changed program and enable histogram interrupt
+	 * else only enable histogram interrupt
+	 */
+	if (gbandthreshold != histogram->gbandthreshold ||
+	    gbanddelay != histogram->gbanddelay)
+		intel_histogram_program_guardband(intel_crtc, gbandthreshold,
+						  gbanddelay);
+	else
+		intel_de_rmw(display, DPST_GUARD(intel_crtc->pipe),
+			     DPST_GUARD_HIST_INT_EN,
+			     DPST_GUARD_HIST_INT_EN);
 
 	/* Clear histogram interrupt by setting histogram interrupt status bit*/
 	intel_de_rmw(display, DPST_GUARD(intel_crtc->pipe),

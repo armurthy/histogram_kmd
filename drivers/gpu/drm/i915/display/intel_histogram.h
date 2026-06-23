@@ -29,7 +29,9 @@ struct intel_histogram {
 	bool enable;
 	bool can_enable;
 	u32 bin_data[HISTOGRAM_BIN_COUNT];
+	u32 gbandthreshold;
 	u16 seg_size;
+	u8 gbanddelay;
 };
 
 enum intel_global_hist_status {
