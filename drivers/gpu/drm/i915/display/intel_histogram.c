@@ -8,12 +8,14 @@
 #include <drm/drm_print.h>
 #include <drm/drm_vblank.h>
 
+#include "intel_backlight.h"
 #include "intel_color_regs.h"
 #include "intel_de.h"
 #include "intel_display.h"
 #include "intel_display_regs.h"
 #include "intel_display_types.h"
 #include "intel_display_utils.h"
+#include "intel_dp.h"
 #include "intel_histogram.h"
 #include "intel_histogram_regs.h"
 #include "intel_psr.h"
@@ -365,9 +367,13 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	struct intel_histogram *histogram = intel_crtc->histogram;
 	struct intel_display *display = to_intel_display(intel_crtc);
 	struct intel_encoder *encoder = NULL;
+	struct intel_connector *connector = NULL;
 	struct intel_dp *intel_dp = NULL;
+	struct intel_panel *panel = NULL;
 	int pipe = intel_crtc->pipe;
 	u32 *data;
+	u32 pwm_duty_cycle = 0;
+	u32 pwm_level = 0;
 
 	if (!histogram)
 		return -EINVAL;
@@ -406,6 +412,17 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	}
 
 	write_iet(display, pipe, data);
+
+	if (intel_dp && intel_dp_is_edp(intel_dp) &&
+	    histogram->nr_iet_lut == (HISTOGRAM_IET_LENGTH + 1)) {
+		connector = intel_dp->attached_connector;
+		panel = &connector->panel;
+		pwm_level = DIV_ROUND_CLOSEST((data[histogram->nr_iet_lut - 1] *
+				       panel->backlight.max), 10000);
+		pwm_duty_cycle = intel_backlight_level_to_pwm(connector, pwm_level);
+		connector->panel.backlight.funcs->set(connector->base.state,
+						      pwm_duty_cycle);
+	}
 
 	kfree(histogram->iet_lut_data);
 	histogram->iet_lut_data = NULL;
