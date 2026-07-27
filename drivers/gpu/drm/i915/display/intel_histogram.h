@@ -35,6 +35,7 @@ struct intel_histogram {
 	/* Kernel copy of the IET LUT captured during atomic_check (user ctx). */
 	u32 *iet_lut_data;
 	u32 iet_lut_nr;
+	u32 level;
 };
 
 enum intel_global_hist_status {

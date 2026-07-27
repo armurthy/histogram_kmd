@@ -353,6 +353,7 @@ int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
 	struct drm_connector_list_iter conn_iter;
 	struct drm_connector *connector;
 	struct drm_connector_state *conn_state = NULL;
+	struct intel_panel *panel;
 
 	/* TODO: Restrictions for enabling histogram */
 	histogram->can_enable = true;
@@ -373,6 +374,12 @@ int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
 
 	if (intel_crtc->config->psr2_su_area.y1)
 		histogram->seg_size = intel_histogram_sf_compute(intel_crtc);
+
+	if (!histogram->enable) {
+		panel = &to_intel_connector(connector)->panel;
+		/* cache the panel backlight */
+		histogram->level = panel->backlight.level;
+	}
 
 	return 0;
 }
@@ -491,7 +498,6 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	struct intel_encoder *encoder = NULL;
 	struct intel_connector *connector = NULL;
 	struct intel_dp *intel_dp = NULL;
-	struct intel_panel *panel = NULL;
 	int pipe = intel_crtc->pipe;
 	u32 *data;
 	u32 pwm_duty_cycle = 0;
@@ -538,9 +544,8 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	if (intel_dp && intel_dp_is_edp(intel_dp) &&
 	    histogram->iet_lut_nr == (HISTOGRAM_IET_LENGTH + 1)) {
 		connector = intel_dp->attached_connector;
-		panel = &connector->panel;
 		pwm_level = DIV_ROUND_CLOSEST((data[histogram->iet_lut_nr - 1] *
-				       panel->backlight.max), 10000);
+				       histogram->level), 10000);
 		pwm_duty_cycle = intel_backlight_level_to_pwm(connector, pwm_level);
 		connector->panel.backlight.funcs->set(connector->base.state,
 						      pwm_duty_cycle);
