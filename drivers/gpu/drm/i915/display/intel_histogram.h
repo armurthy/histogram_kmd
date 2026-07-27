@@ -29,11 +29,12 @@ struct intel_histogram {
 	bool enable;
 	bool can_enable;
 	u32 bin_data[HISTOGRAM_BIN_COUNT];
-	u32 *iet_lut_data;
-	u32 nr_iet_lut;
 	u32 gbandthreshold;
 	u16 seg_size;
 	u8 gbanddelay;
+	/* Kernel copy of the IET LUT captured during atomic_check (user ctx). */
+	u32 *iet_lut_data;
+	u32 iet_lut_nr;
 };
 
 enum intel_global_hist_status {

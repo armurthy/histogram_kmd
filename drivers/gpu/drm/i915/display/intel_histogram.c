@@ -341,7 +341,7 @@ int intel_histogram_capture_iet_lut(struct intel_crtc *intel_crtc,
 
 	kfree(histogram->iet_lut_data);
 	histogram->iet_lut_data = data;
-	histogram->nr_iet_lut = nr;
+	histogram->iet_lut_nr = nr;
 
 	return 0;
 }
@@ -536,10 +536,10 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	write_iet(display, pipe, data);
 
 	if (intel_dp && intel_dp_is_edp(intel_dp) &&
-	    histogram->nr_iet_lut == (HISTOGRAM_IET_LENGTH + 1)) {
+	    histogram->iet_lut_nr == (HISTOGRAM_IET_LENGTH + 1)) {
 		connector = intel_dp->attached_connector;
 		panel = &connector->panel;
-		pwm_level = DIV_ROUND_CLOSEST((data[histogram->nr_iet_lut - 1] *
+		pwm_level = DIV_ROUND_CLOSEST((data[histogram->iet_lut_nr - 1] *
 				       panel->backlight.max), 10000);
 		pwm_duty_cycle = intel_backlight_level_to_pwm(connector, pwm_level);
 		connector->panel.backlight.funcs->set(connector->base.state,
@@ -548,7 +548,7 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 
 	kfree(histogram->iet_lut_data);
 	histogram->iet_lut_data = NULL;
-	histogram->nr_iet_lut = 0;
+	histogram->iet_lut_nr = 0;
 
 	return 0;
 }
