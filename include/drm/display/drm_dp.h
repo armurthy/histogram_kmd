@@ -1008,6 +1008,10 @@
 
 /* Source Device-specific */
 #define DP_SOURCE_OUI			    0x300
+/* eDP sink extended capabilities (source device-specific field) */
+#define DP_EDP_SINK_EXT_CAP		    0x317
+# define DP_EDP_SINK_OLED				(1 << 4)
+# define DP_EDP_SINK_MINILED				(1 << 6)
 
 /* Sink Device-specific */
 #define DP_SINK_OUI			    0x400

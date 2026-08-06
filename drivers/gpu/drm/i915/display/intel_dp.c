@@ -6930,6 +6930,8 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 	struct intel_connector *connector = intel_dp->attached_connector;
 	const struct drm_display_mode *fixed_mode =
 		intel_panel_preferred_fixed_mode(connector);
+	int panel_type;
+	u8 sink_ext_cap;
 
 	intel_attach_scaling_mode_property(&connector->base);
 
@@ -6937,6 +6939,21 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 						       display->vbt.orientation,
 						       fixed_mode->hdisplay,
 						       fixed_mode->vdisplay);
+
+	/* Expose the panel technology (LCD/OLED) */
+	panel_type = connector->base.display_info.panel_type;
+	if (panel_type == DRM_MODE_PANEL_TYPE_UNKNOWN &&
+	    drm_dp_dpcd_read_byte(&intel_dp->aux, DP_EDP_SINK_EXT_CAP, &sink_ext_cap) == 0) {
+		if (sink_ext_cap & DP_EDP_SINK_OLED)
+			panel_type = DRM_MODE_PANEL_TYPE_OLED;
+		else if (sink_ext_cap & DP_EDP_SINK_MINILED)
+			panel_type = DRM_MODE_PANEL_TYPE_LCD;
+	}
+
+	drm_connector_attach_panel_type_property(&connector->base);
+	drm_object_property_set_value(&connector->base.base,
+				      display->drm->mode_config.panel_type_property,
+				      panel_type);
 }
 
 static void intel_edp_backlight_setup(struct intel_dp *intel_dp,
