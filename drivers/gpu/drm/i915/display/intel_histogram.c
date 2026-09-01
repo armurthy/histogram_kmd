@@ -8,7 +8,6 @@
 #include <drm/drm_print.h>
 #include <drm/drm_vblank.h>
 
-#include "intel_backlight.h"
 #include "intel_color_regs.h"
 #include "intel_de.h"
 #include "intel_display.h"
@@ -500,8 +499,7 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	struct intel_dp *intel_dp = NULL;
 	int pipe = intel_crtc->pipe;
 	u32 *data;
-	u32 pwm_duty_cycle = 0;
-	u32 pwm_level = 0;
+	u32 level;
 
 	if (!histogram)
 		return -EINVAL;
@@ -544,11 +542,13 @@ int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 	if (intel_dp && intel_dp_is_edp(intel_dp) &&
 	    histogram->iet_lut_nr == (HISTOGRAM_IET_LENGTH + 1)) {
 		connector = intel_dp->attached_connector;
-		pwm_level = DIV_ROUND_CLOSEST((data[histogram->iet_lut_nr - 1] *
-				       histogram->level), 10000);
-		pwm_duty_cycle = intel_backlight_level_to_pwm(connector, pwm_level);
-		connector->panel.backlight.funcs->set(connector->base.state,
-						      pwm_duty_cycle);
+
+		level = DIV_ROUND_CLOSEST((data[histogram->iet_lut_nr - 1] *
+					   histogram->level), 10000);
+
+		if (!intel_dp_in_hdr_mode(connector->base.state))
+			connector->panel.backlight.funcs->set(connector->base.state,
+							      level);
 	}
 
 	kfree(histogram->iet_lut_data);
