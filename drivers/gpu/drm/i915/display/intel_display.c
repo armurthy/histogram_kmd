@@ -4388,6 +4388,11 @@ static int intel_crtc_atomic_check(struct intel_atomic_state *state,
 		ret = intel_histogram_atomic_check(crtc);
 		if (ret)
 			return ret;
+
+		ret = intel_histogram_capture_mode_data(crtc, crtc_state,
+							crtc_state->uapi.histogram_enable);
+		if (ret)
+			return ret;
 	}
 
 	if (crtc_state->uapi.iet_lut_updated && crtc_state->uapi.iet_lut) {
@@ -7702,7 +7707,8 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 		if (new_crtc_state->uapi.histogram_updated)
 			intel_histogram_update(crtc,
 					       (struct drm_histogram_config *)
-					       new_crtc_state->uapi.histogram_enable->data);
+					       new_crtc_state->uapi.histogram_enable->data,
+					       new_crtc_state->histogram_coeff);
 		if (new_crtc_state->uapi.iet_lut_updated)
 			intel_histogram_set_iet_lut(crtc, new_crtc_state->uapi.iet_lut);
 	}

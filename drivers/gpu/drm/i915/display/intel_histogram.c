@@ -32,6 +32,7 @@
 #define IET_SAMPLE_FORMAT_1_INT_9_FRACT 0x1000009
 #define MIN_SEGMENTS 32
 #define MAX_SEGMENTS 128
+#define  DPST_PROG_COEF_MAX 511
 
 static int intel_histogram_sf_compute(struct intel_crtc *intel_crtc)
 {
@@ -345,6 +346,20 @@ int intel_histogram_capture_iet_lut(struct intel_crtc *intel_crtc,
 	return 0;
 }
 
+static void intel_histogram_program_coef(struct intel_crtc *intel_crtc,
+					 const u32 *coeff)
+{
+	struct intel_display *display = to_intel_display(intel_crtc);
+
+	intel_de_rmw(display, DPST_PROG_COEF(intel_crtc->pipe),
+		     DPST_PROG_COEF_RED_MASK |
+		     DPST_PROG_COEF_GREEN_MASK |
+		     DPST_PROG_COEF_BLUE_MASK,
+		     DPST_PROG_COEF_RED(coeff[0]) |
+		     DPST_PROG_COEF_GREEN(coeff[1]) |
+		     DPST_PROG_COEF_BLUE(coeff[2]));
+}
+
 int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
 {
 	struct intel_display *display = to_intel_display(intel_crtc);
@@ -380,10 +395,13 @@ int intel_histogram_atomic_check(struct intel_crtc *intel_crtc)
 		histogram->level = panel->backlight.level;
 	}
 
+	histogram->panel_type = connector->display_info.panel_type;
+
 	return 0;
 }
 
-static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
+static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode,
+				  const u32 *coeff)
 {
 	struct intel_display *display = to_intel_display(intel_crtc);
 	struct intel_histogram *histogram = intel_crtc->histogram;
@@ -395,8 +413,20 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 	if (histogram->enable)
 		return 0;
 
+	if (mode == DRM_MODE_HISTOGRAM_WEIGHTED_RGB &&
+	    histogram->panel_type != DRM_MODE_PANEL_TYPE_OLED) {
+		drm_dbg_kms(display->drm,
+			    "[CRTC:%d:%s] Weighted RGB histogram needs an OLED panel, panel type %d\n",
+			     intel_crtc->base.base.id, intel_crtc->base.name,
+			     histogram->panel_type);
+		return -EINVAL;
+	}
+
 	/* Pipe Dithering should be enabled with histogram */
 	intel_histogram_enable_dithering(display, pipe);
+
+	if (mode == DRM_MODE_HISTOGRAM_WEIGHTED_RGB)
+		intel_histogram_program_coef(intel_crtc, coeff);
 
 	 /* enable histogram, clear DPST_BIN reg and select TC function */
 	if (DISPLAY_VER(display) >= 20)
@@ -404,7 +434,9 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 			     DPST_CTL_IE_HIST_EN |
 			     DPST_CTL_HIST_MODE,
 			     DPST_CTL_IE_HIST_EN |
-			     DPST_CTL_HIST_MODE_HSV);
+			     (mode == DRM_MODE_HISTOGRAM_WEIGHTED_RGB ?
+			     DPST_CTL_HIST_MODE_PROG_COEF :
+			     DPST_CTL_HIST_MODE_HSV));
 	else
 		 /* enable histogram, clear DPST_CTL bin reg func select to TC */
 		intel_de_rmw(display, DPST_CTL(pipe),
@@ -472,17 +504,20 @@ static void intel_histogram_disable(struct intel_crtc *intel_crtc)
 }
 
 int intel_histogram_update(struct intel_crtc *intel_crtc,
-			   struct drm_histogram_config *config)
+			   struct drm_histogram_config *config,
+			   const u32 *coeff)
 {
 	struct intel_display *display = to_intel_display(intel_crtc);
 
 	if (config->enable) {
-		if (config->hist_mode != DRM_MODE_HISTOGRAM_HSV_MAX_RGB) {
+		if (config->hist_mode != DRM_MODE_HISTOGRAM_HSV_MAX_RGB &&
+		    config->hist_mode != DRM_MODE_HISTOGRAM_WEIGHTED_RGB) {
 			drm_err(display->drm,
-				"Only max(RGB) mode is supported for histogram\n");
+				"Only max(RGB) and weighted RGB modes are supported for histogram\n");
 			return -EINVAL;
 		}
-		return intel_histogram_enable(intel_crtc, config->hist_mode);
+		return intel_histogram_enable(intel_crtc, config->hist_mode,
+					      coeff);
 	}
 
 	intel_histogram_disable(intel_crtc);
@@ -569,6 +604,7 @@ void intel_histogram_finish(struct intel_crtc *intel_crtc)
 
 int intel_histogram_init(struct intel_crtc *crtc)
 {
+	struct intel_display *display = to_intel_display(crtc);
 	struct intel_histogram *histogram;
 	struct drm_histogram_caps *histogram_caps;
 	struct drm_iet_caps *iet_caps;
@@ -584,6 +620,11 @@ int intel_histogram_init(struct intel_crtc *crtc)
 
 	histogram_caps->histogram_mode = DRM_MODE_HISTOGRAM_HSV_MAX_RGB;
 	histogram_caps->bins_count = HISTOGRAM_BIN_COUNT;
+
+	if (DISPLAY_VER(display) >= 20) {
+		histogram_caps->histogram_mode |= DRM_MODE_HISTOGRAM_WEIGHTED_RGB;
+		histogram_caps->hist_coeff_max = DPST_PROG_COEF_MAX;
+	}
 
 	iet_caps = kzalloc(sizeof(*iet_caps), GFP_KERNEL);
 	if (!iet_caps)
@@ -605,6 +646,55 @@ int intel_histogram_init(struct intel_crtc *crtc)
 
 	INIT_DEFERRABLE_WORK(&histogram->work,
 			     intel_histogram_handle_int_work);
+
+	return 0;
+}
+
+int intel_histogram_capture_mode_data(struct intel_crtc *intel_crtc,
+				      struct intel_crtc_state *crtc_state,
+				      struct drm_property_blob *blob)
+{
+	struct intel_display *display = to_intel_display(intel_crtc);
+	struct intel_histogram *histogram = intel_crtc->histogram;
+	struct drm_histogram_config *config;
+	u32 coeff[HISTOGRAM_COEF_COUNT];
+	int i;
+
+	if (!histogram || !blob || !blob->data)
+		return -EINVAL;
+
+	if (blob->length < sizeof(*config))
+		return -EINVAL;
+
+	config = blob->data;
+
+	if (!config->enable)
+		return 0;
+
+	if (config->hist_mode != DRM_MODE_HISTOGRAM_WEIGHTED_RGB)
+		return 0;
+
+	if (config->nr_hist_mode_data != HISTOGRAM_COEF_COUNT)
+		return -EINVAL;
+
+	if (copy_from_user(coeff, u64_to_user_ptr(config->hist_mode_data),
+			   sizeof(coeff))) {
+		drm_dbg_kms(display->drm,
+			    "Histogram coefficient copy_from_user failed (uptr=0x%llx)\n",
+			    config->hist_mode_data);
+		return -EFAULT;
+	}
+
+	for (i = 0; i < HISTOGRAM_COEF_COUNT; i++) {
+		if (coeff[i] > DPST_PROG_COEF_MAX) {
+			drm_dbg_kms(display->drm,
+				    "Histogram coefficient %d out of range (0x%x > 0x%x)\n",
+				    i, coeff[i], DPST_PROG_COEF_MAX);
+			return -EINVAL;
+		}
+	}
+
+	memcpy(crtc_state->histogram_coeff, coeff, sizeof(coeff));
 
 	return 0;
 }

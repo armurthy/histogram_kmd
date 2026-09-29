@@ -1037,6 +1037,7 @@ int drm_crtc_create_histogram_property(struct drm_crtc *crtc,
 	blob_data = blob->data;
 	blob_data->histogram_mode = caps->histogram_mode;
 	blob_data->bins_count = caps->bins_count;
+	blob_data->hist_coeff_max = caps->hist_coeff_max;
 
 	prop = drm_property_create(crtc->dev, DRM_MODE_PROP_ATOMIC |
 				   DRM_MODE_PROP_IMMUTABLE | DRM_MODE_PROP_BLOB,

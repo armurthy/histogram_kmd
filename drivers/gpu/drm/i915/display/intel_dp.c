@@ -6950,6 +6950,8 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 			panel_type = DRM_MODE_PANEL_TYPE_LCD;
 	}
 
+	connector->base.display_info.panel_type = panel_type;
+
 	drm_connector_attach_panel_type_property(&connector->base);
 	drm_object_property_set_value(&connector->base.base,
 				      display->drm->mode_config.panel_type_property,

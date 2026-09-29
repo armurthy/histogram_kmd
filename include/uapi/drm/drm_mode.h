@@ -1631,6 +1631,7 @@ struct drm_mode_closefb {
  */
 enum drm_mode_histogram {
 	DRM_MODE_HISTOGRAM_HSV_MAX_RGB = 0x01,
+	DRM_MODE_HISTOGRAM_WEIGHTED_RGB = 0x02,
 };
 
 /**
@@ -1644,6 +1645,7 @@ enum drm_mode_histogram {
 struct drm_histogram_caps {
 	__u32 histogram_mode;
 	__u32 bins_count;
+	__u32 hist_coeff_max;
 };
 
 /**

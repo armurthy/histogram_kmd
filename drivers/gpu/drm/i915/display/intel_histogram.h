@@ -14,12 +14,14 @@ struct drm_property_blob;
 struct drm_histogram_config;
 struct drm_histogram_caps;
 struct intel_crtc;
+struct intel_crtc_state;
 struct intel_display;
 struct intel_dsb;
 enum pipe;
 
 #define HISTOGRAM_BIN_COUNT                    32
 #define HISTOGRAM_IET_LENGTH                   33
+#define HISTOGRAM_COEF_COUNT                   3
 
 struct intel_histogram {
 	struct drm_histogram_caps *caps;
@@ -36,6 +38,7 @@ struct intel_histogram {
 	u32 *iet_lut_data;
 	u32 iet_lut_nr;
 	u32 level;
+	u8 panel_type;
 };
 
 enum intel_global_hist_status {
@@ -56,11 +59,15 @@ int intel_histogram_atomic_check(struct intel_crtc *intel_crtc);
 int intel_histogram_capture_iet_lut(struct intel_crtc *intel_crtc,
 				    struct drm_property_blob *blob);
 int intel_histogram_update(struct intel_crtc *intel_crtc,
-			   struct drm_histogram_config *config);
+			   struct drm_histogram_config *config,
+			   const u32 *coeff);
 int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc,
 				struct drm_property_blob *blob);
 int intel_histogram_init(struct intel_crtc *intel_crtc);
 void intel_histogram_finish(struct intel_crtc *intel_crtc);
 int intel_histogram_sf_update_seg(struct intel_crtc *intel_crtc, struct intel_dsb *dsb);
+int intel_histogram_capture_mode_data(struct intel_crtc *intel_crtc,
+				      struct intel_crtc_state *crtc_state,
+				      struct drm_property_blob *blob);
 
 #endif /* __INTEL_HISTOGRAM_H__ */

@@ -1069,6 +1069,9 @@ struct intel_crtc_state {
 	bool preload_luts;
 	bool inherited; /* state inherited from BIOS? */
 
+	/* Histogram mode data captured and validated during atomic_check. */
+	u32 histogram_coeff[3];
+
 	/* Ask the hardware to actually async flip? */
 	bool do_async_flip;
 
