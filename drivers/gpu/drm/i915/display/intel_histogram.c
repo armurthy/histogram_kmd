@@ -29,6 +29,9 @@
 /* Precision factor for threshold guardband */
 #define HISTOGRAM_GUARDBAND_PRECISION_FACTOR 10000
 #define HISTOGRAM_BIN_READ_RETRY_COUNT 5
+#define HISTOGRAM_COEFF_RGB_RED		153
+#define HISTOGRAM_COEFF_RGB_GREEN	301
+#define HISTOGRAM_COEFF_RGB_BLUE	58
 #define IET_SAMPLE_FORMAT_1_INT_9_FRACT 0x1000009
 #define MIN_SEGMENTS 32
 #define MAX_SEGMENTS 128
@@ -387,13 +390,35 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 {
 	struct intel_display *display = to_intel_display(intel_crtc);
 	struct intel_histogram *histogram = intel_crtc->histogram;
+	struct intel_encoder *encoder;
+	struct intel_dp *intel_dp = NULL;
 	int pipe = intel_crtc->pipe;
+	bool is_oled = false;
+	u32 hist_mode;
 
 	if (!histogram || !histogram->can_enable)
 		return -EINVAL;
 
 	if (histogram->enable)
 		return 0;
+
+	for_each_intel_encoder_mask_with_psr(display->drm, encoder,
+					     intel_crtc->config->uapi.encoder_mask)
+		intel_dp = enc_to_intel_dp(encoder);
+
+	if (intel_dp && intel_dp->attached_connector)
+		is_oled = intel_dp->attached_connector->base.display_info.panel_type ==
+			  DRM_MODE_PANEL_TYPE_OLED;
+
+	hist_mode = is_oled ? DPST_CTL_HIST_MODE_COEFF_RGB : DPST_CTL_HIST_MODE_HSV;
+
+	if (is_oled)
+		intel_de_rmw(display, DPST_PROG_COEF(pipe),
+			     DPST_PROG_COEF_RED_MASK | DPST_PROG_COEF_GREEN_MASK |
+			     DPST_PROG_COEF_BLUE_MASK,
+			     DPST_PROG_COEF_RED(HISTOGRAM_COEFF_RGB_RED) |
+			     DPST_PROG_COEF_GREEN(HISTOGRAM_COEFF_RGB_GREEN) |
+			     DPST_PROG_COEF_BLUE(HISTOGRAM_COEFF_RGB_BLUE));
 
 	/* Pipe Dithering should be enabled with histogram */
 	intel_histogram_enable_dithering(display, pipe);
@@ -404,7 +429,7 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 			     DPST_CTL_IE_HIST_EN |
 			     DPST_CTL_HIST_MODE,
 			     DPST_CTL_IE_HIST_EN |
-			     DPST_CTL_HIST_MODE_HSV);
+			     hist_mode);
 	else
 		 /* enable histogram, clear DPST_CTL bin reg func select to TC */
 		intel_de_rmw(display, DPST_CTL(pipe),
@@ -416,7 +441,7 @@ static int intel_histogram_enable(struct intel_crtc *intel_crtc, u8 mode)
 			     ((mode == DRM_MODE_HISTOGRAM_HSV_MAX_RGB) ?
 			      DPST_CTL_BIN_REG_FUNC_TC : 0) |
 			     DPST_CTL_IE_HIST_EN |
-			     DPST_CTL_HIST_MODE_HSV |
+			     hist_mode |
 			     DPST_CTL_IE_TABLE_VALUE_FORMAT_1INT_9FRAC |
 			     DPST_CTL_EN_MULTIPLICATIVE | DPST_CTL_IE_MODI_TABLE_EN);
 
