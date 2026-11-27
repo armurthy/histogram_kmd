@@ -32,6 +32,10 @@
 #define IET_SAMPLE_FORMAT_1_INT_9_FRACT 0x1000009
 #define MIN_SEGMENTS 32
 #define MAX_SEGMENTS 128
+/* Frames to wait for a new IET LUT after a histogram event before falling back */
+#define HISTOGRAM_IET_FALLBACK_FRAMES 3
+
+static unsigned long iet_write_delay(struct intel_crtc *intel_crtc);
 
 static int intel_histogram_sf_compute(struct intel_crtc *intel_crtc)
 {
@@ -250,10 +254,19 @@ static void intel_histogram_handle_int_work(struct work_struct *work)
 			break;
 		}
 	}
+	/* Entries not yet written are stale for the new histogram, drop them */
+	histogram->iet_lut_nr = histogram->iet_next * (HISTOGRAM_IET_LENGTH + 1);
+
 	if (retry >= HISTOGRAM_BIN_READ_RETRY_COUNT) {
 		drm_err(display->drm, "Histogram bin read failed with max retry\n");
+		/* Bad histogram, fall back right away */
+		queue_delayed_work(display->wq.unordered, &histogram->iet_work, 0);
 		return;
 	}
+
+	/* Fall back if userspace doesn't send a new IET LUT in time */
+	queue_delayed_work(display->wq.unordered, &histogram->iet_work,
+			   HISTOGRAM_IET_FALLBACK_FRAMES * iet_write_delay(intel_crtc));
 
 	/* Wa: 14014889975 */
 	if (IS_DISPLAY_VER(display, 13, 14))
@@ -540,13 +553,52 @@ static void write_iet_lut_data(struct work_struct *work)
 	u32 nr_entries, level;
 	u32 *entry;
 
-	if (!histogram->enable || !histogram->iet_lut_data)
-		return;
+	for_each_intel_encoder_mask_with_psr(display->drm, encoder,
+					     intel_crtc->config->uapi.encoder_mask)
+		intel_dp = enc_to_intel_dp(encoder);
 
 	/* Each IET entry is HISTOGRAM_IET_LENGTH LUT values + 1 backlight value */
 	nr_entries = histogram->iet_lut_nr / (HISTOGRAM_IET_LENGTH + 1);
-	if (histogram->iet_next >= nr_entries)
+
+	if (histogram->enable && histogram->iet_next >= nr_entries) {
+		/* No new IET LUT from userspace in time, or bad histogram */
+		drm_err(display->drm, "No valid IET LUT, disabling DPST\n");
+		intel_histogram_disable(intel_crtc);
+		histogram->iet_next = nr_entries;
+	}
+
+	if (!histogram->enable) {
+		/* Phase out the backlight through the applied entries in reverse */
+		if (!histogram->iet_lut_data)
+			return;
+
+		if (histogram->iet_next)
+			histogram->iet_next--;
+
+		if (histogram->iet_next) {
+			entry = &histogram->iet_lut_data[(histogram->iet_next - 1) *
+							 (HISTOGRAM_IET_LENGTH + 1)];
+			level = DIV_ROUND_CLOSEST((entry[HISTOGRAM_IET_LENGTH] *
+						   histogram->level), 10000);
+		} else {
+			level = histogram->level;
+			kfree(histogram->iet_lut_data);
+			histogram->iet_lut_data = NULL;
+			histogram->iet_lut_nr = 0;
+		}
+
+		if (intel_dp && intel_dp_is_edp(intel_dp)) {
+			connector = intel_dp->attached_connector;
+			if (!intel_dp_in_hdr_mode(connector->base.state))
+				connector->panel.backlight.funcs->set(connector->base.state,
+								      level);
+		}
+
+		if (histogram->iet_lut_data)
+			queue_delayed_work(display->wq.unordered, &histogram->iet_work,
+					   iet_write_delay(intel_crtc));
 		return;
+	}
 
 	entry = &histogram->iet_lut_data[histogram->iet_next * (HISTOGRAM_IET_LENGTH + 1)];
 
@@ -558,10 +610,6 @@ static void write_iet_lut_data(struct work_struct *work)
 	}
 
 	set_bin_index_0(display, pipe);
-
-	for_each_intel_encoder_mask_with_psr(display->drm, encoder,
-					     intel_crtc->config->uapi.encoder_mask)
-		intel_dp = enc_to_intel_dp(encoder);
 
 	/* If PSR is active, read-write the Palette LUT so as to trigger a PSR exit */
 	if (intel_dp && intel_dp->psr.active) {
@@ -582,14 +630,9 @@ static void write_iet_lut_data(struct work_struct *work)
 							      level);
 	}
 
-	if (++histogram->iet_next < nr_entries) {
+	if (++histogram->iet_next < nr_entries)
 		queue_delayed_work(display->wq.unordered, &histogram->iet_work,
 				   iet_write_delay(intel_crtc));
-	} else {
-		kfree(histogram->iet_lut_data);
-		histogram->iet_lut_data = NULL;
-		histogram->iet_lut_nr = 0;
-	}
 }
 
 int intel_histogram_set_iet_lut(struct intel_crtc *intel_crtc)
@@ -623,6 +666,10 @@ void intel_histogram_flip(struct intel_crtc *intel_crtc)
 	struct intel_histogram *histogram = intel_crtc->histogram;
 
 	if (!histogram || !histogram->enable || !histogram->iet_lut_data)
+		return;
+
+	/* Don't fire a pending fallback early, only push pending entries */
+	if (histogram->iet_next >= histogram->iet_lut_nr / (HISTOGRAM_IET_LENGTH + 1))
 		return;
 
 	flush_delayed_work(&histogram->iet_work);
